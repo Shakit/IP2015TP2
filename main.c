@@ -77,17 +77,19 @@ int main(int argc, char** argv)
 	int* M;
 
 	/* GLPK */
-	int *ia, *ja, *ar;
+	int *ia, *ja;
+	double *ar;
 	double z;
 	double *x;
+	int notZeroCount;
 
 	/* Misc */
-	int i;
+	int i, pos;
 
 	/* Check up */
 	if(argc != 2)
 	{
-		printf("ERROR : no data file !");
+		printf("ERROR : no data file !\n");
 		exit(1);		
 	}
 	
@@ -96,12 +98,12 @@ int main(int argc, char** argv)
 
 	if(d.nbjour < 1)
 	{
-		printf("Obvious...");
+		printf("Obvious...\n");
 		return 0;	
 	}
 	
 	M = (int*) malloc ((d.nbjour +1)* sizeof(int));
-	M[d.nbjour] = d.d[nbjour];
+	M[d.nbjour] = d.d[d.nbjour];
 	for (i = d.nbjour-1; i >=0; --i)
 	{
 		M[i] = d.d[i] + M[i+1];
@@ -117,7 +119,7 @@ int main(int argc, char** argv)
 	glp_init_smcp(&parm);
 	parm.msg_lev = GLP_MSG_OFF;
 
-	glp_smcp parmip;
+	glp_iocp parmip;
 	glp_init_iocp(&parmip);
 	parmip.msg_lev = GLP_MSG_OFF;
 
@@ -125,14 +127,14 @@ int main(int argc, char** argv)
 	glp_add_rows(prob, 2*d.nbjour +2);
 	for (i = 1; i <= d.nbjour; ++i)
 	{
-		glp_set_raw_bnds(prob, i, GLP_FX, d.d[i], d.d[i]);
+		glp_set_row_bnds(prob, i, GLP_FX, d.d[i], d.d[i]);
 	}
-	for (i = d.nbjour+1; i < 2*d.nbjour; ++i)
+	for (i = d.nbjour+1; i <= 2*d.nbjour; ++i)
 	{
-		glp_set_raw_bnds(prob, i, GLP_LO, 0, 0);
+		glp_set_row_bnds(prob, i, GLP_LO, 0, 0);
 	}	
-	glp_set_raw_bnds(prob, 2*d.nbjour+1, GLP_FX, 0.0, 0.0);
-	glp_set_raw_bnds(prob, 2*d.nbjour+2, GLP_FX, 0.0, 0.0);
+	glp_set_row_bnds(prob, 2*d.nbjour+1, GLP_FX, 0.0, 0.0);
+	glp_set_row_bnds(prob, 2*d.nbjour+2, GLP_FX, 0.0, 0.0);
 
 	/* Number of variables : 3*(nbjour +1)*/
 	glp_add_cols(prob, 3*(d.nbjour+1));
@@ -142,9 +144,86 @@ int main(int argc, char** argv)
 		glp_set_col_bnds(prob, i*3 +2, GLP_LO, 0.0, 0.0);
 		glp_set_col_bnds(prob, i*3 +3, GLP_DB, 0.0, 1.0);
 	}
+	for (i = 1; i <= 3*(d.nbjour+1); ++i)
+	{
+		glp_set_col_kind(prob, i, GLP_CV);
+	}
 
+	/* Coefficients of the economic function */
+	glp_set_obj_coef(prob, 1, 0);
+	glp_set_obj_coef(prob, 2, 0);
+	glp_set_obj_coef(prob, 3, 0);
+	for (i = 1; i <=d.nbjour; ++i)
+	{
+		glp_set_obj_coef(prob, 3*i+1, d.p[i]);
+		glp_set_obj_coef(prob, 3*i+2, d.h[i]);
+		glp_set_obj_coef(prob, 3*i+3, d.f[i]);
+	}
 
-		
+	/* Matrix */
+	notZeroCount = 5 * d.nbjour + 2;
 
+	ia = (int *) malloc ((1+notZeroCount) * sizeof(int));
+	ja = (int *) malloc ((1+notZeroCount) * sizeof(int));	
+	ar = (double *) malloc ((1+notZeroCount) * sizeof(double));
+
+	pos = 1;
+	for (i = 1; i <= d.nbjour; ++i)
+	{
+		ia[pos] = i;
+		ia[pos+1] = i;
+		ia[pos+2] = i;
+
+		ja[pos] = i*3-1;
+		ja[pos+1] = i*3+1;
+		ja[pos+2] = i*3+2;
+
+		ar[pos] = 1.0;
+		ar[pos+1] = 1.0;
+		ar[pos+2] = -1.0;
+			
+		pos += 3;
+	}
+
+	for (i = 1; i <= d.nbjour; ++i)
+	{
+		ia[pos] = i + d.nbjour;
+		ia[pos+1] = i + d.nbjour;
+
+		ja[pos] = i*3+1;
+		ja[pos+1] = i*3+3;
+
+		ar[pos] = -1.0;
+		ar[pos+1] = M[i];
+			
+		pos += 2;
+	}
+	
+	ia[pos] = 2*d.nbjour +1;
+	ia[pos+1] = 2 * d.nbjour+2;
+
+	ja[pos] = 3*(d.nbjour+1)-1;
+	ja[pos+1] = 2;
+
+	ar[pos] = 1.0;
+	ar[pos+1] = 1.0;
+
+	pos += 2;
+
+	glp_load_matrix(prob, notZeroCount, ia, ja , ar);
+
+	/* Writing in a file */
+	glp_write_lp(prob, NULL, "ULS.lp");
+
+	/* Solve */
+	glp_simplex(prob, &parm); glp_intopt(prob, &parmip);
+	z = glp_mip_obj_val(prob);
+	x = (double *) malloc (3*(d.nbjour+1) * sizeof(double));
+	for (i = 0; i < 3*(d.nbjour+1); ++i) x[i] = glp_mip_col_val(prob, i+1);
+
+	printf(" z = %f",z);
+	printf("Solution :\n");
+	for (i = 0; i < 3*(d.nbjour+1); ++i) printf(" x%d = %f  \n", i, x[i]);
+	 printf(" M%d = %d",5,M[5]);
 
 }
