@@ -12,7 +12,8 @@
 #include <string.h>
 #include <glpk.h>
 
-typedef struct
+/* Data structure */
+typedef struct data
 {
 	int nbjour;
 	int* d;
@@ -21,6 +22,42 @@ typedef struct
 	int* f;
 } data;
 
+/* Node structure */
+typedef struct node
+{
+    double* x;
+	double z;
+	int checked;
+	glp_prob *prob;
+	int* ia;
+	int* ja;
+	double* ar;
+	struct node* father;
+	struct node* leftSon;
+	struct node* rightSon;
+} node;
+
+/* Node creating function */
+void create_node(node* n, double* x, glp_prob* prob, int* ia, int* ja, double* ar, node* father)
+{
+	n->x = x;
+	n->ia = ia;
+	n->ja = ja;
+	n->ar = ar;
+	n->father = father;
+
+	if (n-> father == 0)
+	{
+		glp_copy_prob(n->prob,prob, GLP_ON);
+	}
+	else
+	{
+		glp_copy_prob(n->prob, n->father->prob, GLP_ON);
+	}
+	
+}
+
+/* File reading function */
 void filereader(char* filename, data* d)
 {
 	FILE *fin;
@@ -163,9 +200,9 @@ int main(int argc, char** argv)
 	/* Matrix */
 	notZeroCount = 5 * d.nbjour + 2;
 
-	ia = (int *) malloc ((1+notZeroCount) * sizeof(int));
-	ja = (int *) malloc ((1+notZeroCount) * sizeof(int));	
-	ar = (double *) malloc ((1+notZeroCount) * sizeof(double));
+	ia = (int *) malloc ((1+notZeroCount + d.nbjour) * sizeof(int));
+	ja = (int *) malloc ((1+notZeroCount + d.nbjour) * sizeof(int));	
+	ar = (double *) malloc ((1+notZeroCount +d.nbjour) * sizeof(double));
 
 	pos = 1;
 	for (i = 1; i <= d.nbjour; ++i)
@@ -217,13 +254,16 @@ int main(int argc, char** argv)
 
 	/* Solve */
 	glp_simplex(prob, &parm); glp_intopt(prob, &parmip);
+
+	/*Branch and bound*/
+	
+	
+	/* Display */														
 	z = glp_mip_obj_val(prob);
 	x = (double *) malloc (3*(d.nbjour+1) * sizeof(double));
 	for (i = 0; i < 3*(d.nbjour+1); ++i) x[i] = glp_mip_col_val(prob, i+1);
 
-	printf(" z = %f",z);
+	printf(" z = %f\n",z);
 	printf("Solution :\n");
 	for (i = 0; i < 3*(d.nbjour+1); ++i) printf(" x%d = %f  \n", i, x[i]);
-	 printf(" M%d = %d",5,M[5]);
-
 }
