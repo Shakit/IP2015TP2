@@ -29,32 +29,58 @@ typedef struct node
 	double z;
 	int checked;
 	glp_prob *prob;
-	int* ia;
-	int* ja;
-	double* ar;
 	struct node* father;
 	struct node* leftSon;
 	struct node* rightSon;
 } node;
 
 /* Node creating function */
-void create_node(node* n, double* x, glp_prob* prob, int* ia, int* ja, double* ar, node* father)
+void create_node(node* n, glp_prob* prob, node* father, int y, double valy)
 {
-	n->x = x;
-	n->ia = ia;
-	n->ja = ja;
-	n->ar = ar;
 	n->father = father;
+	n->leftSon = NULL;
+	n->rightSon = NULL;
+	
+	int i = 0;
+	int ind[] = {0,y};
+	double val[] = {0,1}; 
 
-	if (n-> father == 0)
+	if (n-> father == NULL)
 	{
-		glp_copy_prob(n->prob,prob, GLP_ON);
+		n->prob = prob;
 	}
 	else
 	{
+		n->prob = glp_create_prob();
 		glp_copy_prob(n->prob, n->father->prob, GLP_ON);
+		i = glp_add_rows(n->prob, 1);
+		glp_set_mat_row(n->prob, i, 1, ind, val);
+		glp_set_row_bnds(n->prob, i, GLP_FX, valy, valy);
 	}
+
+	glp_smcp parm;
+	glp_init_smcp(&parm);
+	parm.msg_lev = GLP_MSG_OFF;
+
+	glp_iocp parmip;
+	glp_init_iocp(&parmip);
+	parmip.msg_lev = GLP_MSG_OFF;
+
+	glp_simplex(n->prob, &parm); glp_intopt(n->prob, &parmip);
+
+	n->z = glp_mip_obj_val(n->prob);
+	n->x = (double *) malloc (glp_get_num_cols(n->prob) * sizeof(double));
+	for (i = 0; i < glp_get_num_cols(n->prob); ++i) n->x[i] = glp_mip_col_val(n->prob, i+1);
+}
+
+/* Display node function */
+void displayNode(node* n)
+{
+	int i;
 	
+	printf(" z = %f\n",n->z);
+	printf("Solution :\n");
+	for (i = 0; i < glp_get_num_cols(n->prob); ++i) printf(" x%d = %f  \n", i, n->x[i]);
 }
 
 /* File reading function */
@@ -200,9 +226,9 @@ int main(int argc, char** argv)
 	/* Matrix */
 	notZeroCount = 5 * d.nbjour + 2;
 
-	ia = (int *) malloc ((1+notZeroCount + d.nbjour) * sizeof(int));
-	ja = (int *) malloc ((1+notZeroCount + d.nbjour) * sizeof(int));	
-	ar = (double *) malloc ((1+notZeroCount +d.nbjour) * sizeof(double));
+	ia = (int *) malloc ((1+notZeroCount) * sizeof(int));
+	ja = (int *) malloc ((1+notZeroCount) * sizeof(int));	
+	ar = (double *) malloc ((1+notZeroCount) * sizeof(double));
 
 	pos = 1;
 	for (i = 1; i <= d.nbjour; ++i)
@@ -256,14 +282,16 @@ int main(int argc, char** argv)
 	glp_simplex(prob, &parm); glp_intopt(prob, &parmip);
 
 	/*Branch and bound*/
+	node* n = (node*) malloc (sizeof(node));
+	create_node(n, prob, NULL, 0, 0); // first node 0
+	displayNode(n);
+	node* zbra = (node*) malloc (sizeof(node));
 	
+	create_node(zbra,prob,n,6,1);
+	displayNode(zbra);
 	
-	/* Display */														
-	z = glp_mip_obj_val(prob);
-	x = (double *) malloc (3*(d.nbjour+1) * sizeof(double));
-	for (i = 0; i < 3*(d.nbjour+1); ++i) x[i] = glp_mip_col_val(prob, i+1);
-
-	printf(" z = %f\n",z);
-	printf("Solution :\n");
-	for (i = 0; i < 3*(d.nbjour+1); ++i) printf(" x%d = %f  \n", i, x[i]);
+	/* Display */
+//	z = glp_mip_obj_val(prob);
+//	x = (double *) malloc (3*(d.nbjour+1) * sizeof(double));
+//	for (i = 0; i < 3*(d.nbjour+1); ++i) x[i] = glp_mip_col_val(prob, i+1);
 }
