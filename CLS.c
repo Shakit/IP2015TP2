@@ -44,7 +44,7 @@ void displayNode(node* n)
 {
 	int i;
 
-	if (0)//n->solveFlag == 0 && n->z == 0)
+	if (n->solveFlag == 0 && n->z == 0)
 	{
 		printf("NOT FEASIBLE\n");
 	}
@@ -57,6 +57,10 @@ void displayNode(node* n)
 }
 
 /* Node creating function */
+/* Different cases :
+ *     - if the created node is root, then father is NULL, the problem version in the node is the one gave as parameter.
+ *     - else we copy the problem, and had the constraint "x_{y} = valy"
+ */
 void create_node(node* n, glp_prob* prob, node* father, int y, double valy)
 {
 	n->father = father;
@@ -68,7 +72,6 @@ void create_node(node* n, glp_prob* prob, node* father, int y, double valy)
 	int ind[] = {0,y};
 	double val[] = {0,1};
 	
-
 	if (n-> father == NULL)
 	{
 		n->prob = prob;
@@ -97,16 +100,19 @@ void create_node(node* n, glp_prob* prob, node* father, int y, double valy)
 	n->z = glp_mip_obj_val(n->prob);
 	n->x = (double *) malloc (glp_get_num_cols(n->prob) * sizeof(double));
 	for (i = 0; i < glp_get_num_cols(n->prob); ++i) n->x[i] = glp_mip_col_val(n->prob, i+1);
-
-	
-	printf("solveFlag = %d\n",n->solveFlag);
-	
-//	displayNode(n);
 }
 
 
 
 /* Node Checking function */
+/* According to n :
+ *       if n is NULL, return NULL
+ *       else, if the node is not checked (we have already visited it), return the node
+ *             else, we check its sons, and there are different cases:
+ *                 - they return NULL, return NULL
+ *                 - one of them returns NULL, return the other
+ *                 - non is NULL, return the more promising
+ */
 node* checked(node* n)
 {
 	if (n == NULL)
@@ -159,6 +165,9 @@ node* checked(node* n)
 }
 
 /* base solution construction function */
+/* Create from the base problem, an other problem which forces stocks to be 0.
+ * The cronstruted solution stay feasible for the first problem.
+ */
 node* construction (glp_prob * prob, data* d)
 {
 	node* res = (node *) malloc (sizeof(node));
@@ -198,8 +207,6 @@ node* construction (glp_prob * prob, data* d)
 
 		
 	}
-	
-
 
 	create_node(res, constProb, NULL, 0, 0);
 	return res;
@@ -229,6 +236,13 @@ int allYinteger (double* x, int size)
 }
 
 /* Branch and bound algorithm */
+/* While there is one unchecked node :
+ *     We take the most promising.
+ *     If its z value is lower than vUp (constructed solution) : 
+ *         if this is an integer solution, we keep it
+ *         else,
+ *             we create its sons with a new constraint.
+ */
 node* branchAndBound (glp_prob * prob, data* d)
 {
 	node* root = (node *) malloc (sizeof(node));
@@ -278,9 +292,6 @@ node* branchAndBound (glp_prob * prob, data* d)
 		node_ptr->check = 1;
 		node_ptr = checked(root);
 	    
-		printf("------------------\n");
-		//	displayNode(node_ptr);
-		printf("----------------------\n");
 	}
 	
 	return res;

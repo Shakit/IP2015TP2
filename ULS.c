@@ -1,6 +1,6 @@
 /* main.c
  * Authors : DELAVERNHE Florian, LEGRU Guillaume
- * Date 24 11 2015
+ * Date 10 11 2015
  *
  * Implémentation d'un algorithme de Branch & Bound
  *
@@ -13,40 +13,7 @@
 #include <glpk.h>
 #include <math.h>
 #include <assert.h>
-#include <time.h>
-#include <sys/time.h>
-#include <sys/resource.h>
 
-int nbnode;
-
-/*========== TIME ====================*/
-/*Taken from Anthony Przybylski's code for the third year OR project
- */
-struct timeval start_utime, stop_utime;
-
-void crono_start()
-{
-	struct rusage rusage;
-	
-	getrusage(RUSAGE_SELF, &rusage);
-	start_utime = rusage.ru_utime;
-}
-
-void crono_stop()
-{
-	struct rusage rusage;
-	
-	getrusage(RUSAGE_SELF, &rusage);
-	stop_utime = rusage.ru_utime;
-}
-
-double crono_ms()
-{
-	return (stop_utime.tv_sec - start_utime.tv_sec) * 1000 +
-    (stop_utime.tv_usec - start_utime.tv_usec) / 1000 ;
-}
-
-//========== STRUCTURES ==============================//
 /* Data structure */
 typedef struct data
 {
@@ -55,7 +22,6 @@ typedef struct data
 	int* p;
 	int* h;
 	int* f;
-	int* c;
 } data;
 
 /* Node structure */
@@ -71,7 +37,7 @@ typedef struct node
 	struct node* rightSon;
 } node;
 
-//========== NODE FUNCTIONS ==============================//
+
 /* Display node function */
 void displayNode(node* n)
 {
@@ -94,7 +60,7 @@ void displayNode(node* n)
  *     - if the created node is root, then father is NULL, the problem version in the node is the one gave as parameter.
  *     - else we copy the problem, and had the constraint "x_{y} = valy"
  */
-void create_node(node* n, glp_prob* prob, node* father, int y, double valy, int capacited)
+void create_node(node* n, glp_prob* prob, node* father, int y, double valy)
 {
 	n->father = father;
 	n->leftSon = NULL;
@@ -126,14 +92,8 @@ void create_node(node* n, glp_prob* prob, node* father, int y, double valy, int 
 	glp_init_iocp(&parmip);
 	parmip.msg_lev = GLP_MSG_OFF;
 
-	if (!capacited)
-	{
-		glp_write_lp(prob, NULL, "ULS.lp");
-	}
-	else
-	{
-		glp_write_lp(prob, NULL, "CLS.lp");
-	}
+	glp_write_lp(prob, NULL, "ULS.lp");
+
 	n->solveFlag = glp_simplex(n->prob, &parm); glp_intopt(n->prob, &parmip);
 
 	n->z = glp_mip_obj_val(n->prob);
@@ -208,81 +168,43 @@ node* checked(node* n)
 /* Create from the base problem, an other problem which forces stocks to be 0.
  * The cronstruted solution stay feasible for the first problem.
  */
-node* construction (glp_prob * prob, data * d, int capacited)
+node* construction (glp_prob * prob)
 {
 	node* res = (node *) malloc (sizeof(node));
+	
 	glp_prob * constProb = glp_create_prob(); glp_copy_prob(constProb, prob, GLP_ON);
-	if(capacited == 0)
-	{
-		int i = glp_add_rows(constProb, 1);
-		int k = glp_add_rows(constProb, 1);
-		int nbj = glp_get_num_cols(prob)/3 -1;
+	int i = glp_add_rows(constProb, 1);
+	int k = glp_add_rows(constProb, 1);
+    int nbj = glp_get_num_cols(prob)/3 -1;
 
-		int ind[nbj+2];
-		double val[nbj+2];
-		int indk[nbj+2];
-		double valk[nbj+2];
-		int j;
+	int ind[nbj+2];
+	double val[nbj+2];
+	int indk[nbj+2];
+	double valk[nbj+2];
+	int j;
 	
-		ind[0] = 0; val[0] = 1;
-		ind[1] = 1; val[1] = 1;
-		indk[1] = 2 ; valk[1] = 1;
-		for (j = 1; j <= nbj; ++j)
-		{
-			ind[j] = j * 3 +2;
-			indk[j] = j *3 + 3;
-			val[j] = 1;
-			valk[j] = 1;
-		}
-	
-		glp_set_mat_row(constProb, i, nbj, ind, val);
-		glp_set_row_bnds(constProb, i, GLP_FX, 0, 0);
-		glp_set_mat_row(constProb, k, nbj, indk, valk);
-		glp_set_row_bnds(constProb, k, GLP_FX, nbj, nbj);
-	}
-	else
+	ind[0] = 0; val[0] = 1;
+	ind[1] = 1; val[1] = 1;
+	indk[1] = 2 ; valk[1] = 1;
+	for (j = 1; j <= nbj; ++j)
 	{
-		int j;
-		double val[] = {0,1};
-		int ind[] = {0,0};
-	
-		int tamp = 0;
-		for (j=1; j <= d->nbjour; j++)
-		{
-			tamp += d->d[j];
-		}
-
-		j=1;
-		int totDemand=0;
-		while (tamp>totDemand)
-		{
-			if (d->c[j] <= tamp - totDemand)
-			{
-				int i = glp_add_rows(constProb, 1);
-				ind[1] = j*3 + 1;
-				glp_set_mat_row(constProb, i, 1, ind, val);
-				glp_set_row_bnds(constProb, i, GLP_FX, d->c[j], d->c[j]);
-				totDemand += d->c[j];
-			}
-			else
-			{
-				int i = glp_add_rows(constProb, 1);
-				ind[1] = j*3 + 1;
-				glp_set_mat_row(constProb, i, 1, ind, val);
-				glp_set_row_bnds(constProb, i, GLP_FX,tamp-totDemand,tamp-totDemand);
-				totDemand += tamp-totDemand;
-			}
-			j++;
+		ind[j] = j * 3 +2;
+		indk[j] = j *3 + 3;
+		val[j] = 1;
+		valk[j] = 1;
 
 		
-		}
 	}
+	
+	glp_set_mat_row(constProb, i, nbj, ind, val);
+	glp_set_row_bnds(constProb, i, GLP_FX, 0, 0);
+	glp_set_mat_row(constProb, k, nbj, indk, valk);
+	glp_set_row_bnds(constProb, k, GLP_FX, nbj, nbj);
 
-	create_node(res, constProb, NULL, 0, 0,capacited);
+	create_node(res, constProb, NULL, 0, 0);
 	return res;
 }
 
-//========== MISCELLANEOUS ==============================//
 /* function that check if all Y are integer*/
 int allYinteger (double* x, int size)
 {
@@ -306,29 +228,57 @@ int allYinteger (double* x, int size)
 	return res; 
 }
 
-/* An other version for the choice of the y that will branch */
-int allYintegerVar (double* x, int size, data* d)
+/* Branch and bound algorithm */
+/* While there is one unchecked node :
+ *     We take the most promising.
+ *     If its z value is lower than vUp (constructed solution) : 
+ *         if this is an integer solution, we keep it
+ *         else,
+ *             we create its sons with a new constraint.
+ */
+node* branchAndBound (glp_prob * prob)
 {
-	int res = -1;
-	int i;
-	int max = 0;
-	int tamp;
-    	
-	for (i = 0; i < size/3; ++i)
+	node* root = (node *) malloc (sizeof(node));
+	create_node(root, prob, NULL, 0, 0);
+
+	node* res = construction(prob);
+	double vUp = res->z; 
+	
+	node* node_ptr = checked(root);
+	while (node_ptr != NULL)
 	{
-		if(x[i*3+2] != 1 && x[i*3+2] != 0)
+		if (node_ptr->z != 0)
 		{
-			tamp = d->c[i]/d->p[i];
-			if(tamp>max)
+			if (!(node_ptr->z >= vUp))
 			{
-				max = tamp;
-				res = i*3+3;
+				int y = allYinteger(node_ptr->x, glp_get_num_cols(node_ptr->prob));
+				if ( y == -1)
+				{
+					vUp = node_ptr->z;
+					res = node_ptr;
+				}
+				else
+				{
+					node* left = (node *) malloc (sizeof(node));
+					node* right = (node *) malloc (sizeof(node));
+
+					create_node(left, prob, node_ptr, y, 0);
+					create_node(right, prob, node_ptr, y, 1);
+
+					
+					node_ptr->leftSon = left;
+					node_ptr->rightSon = right;
+				}
 			}
 		}
+	
+		node_ptr->check = 1;
+		node_ptr = checked(root);
 	}
-    
-	return res; 
+
+	return res;
 }
+
 /* File reading function */
 void filereader(char* filename, data* d)
 {
@@ -346,16 +296,14 @@ void filereader(char* filename, data* d)
 	d->p = (int *) malloc ((d->nbjour +1) * sizeof(int));	
 	d->h = (int *) malloc ((d->nbjour +1) * sizeof(int));	
 	d->f = (int *) malloc ((d->nbjour +1) * sizeof(int));
-	d->c = (int *) malloc ((d->nbjour +1) * sizeof(int));
 
-
+	
     /* Read and fill*/	
 	d->d[0] = 0;
 	d->p[0] = 0;
 	d->h[0] = 0;
 	d->f[0] = 0;
-	d->c[0] = 0;
-
+				
 	for (i = 1; i <= d->nbjour; ++i)
 	{
 		fscanf(fin, "%d", &val);
@@ -376,81 +324,17 @@ void filereader(char* filename, data* d)
 		fscanf(fin, "%d", &val);
 		d->f[i] = val;
 	}
-	for (i = 1; i <= d->nbjour; ++i)
-	{
-		fscanf(fin, "%d", &val);
-		d->c[i] = val;
-	}
 
 	fclose(fin);
 }
 
-
-//========== BRANCH AND BOUND ==============================//
-/* Branch and bound algorithm */
-/* While there is one unchecked node :
- *     We take the most promising.
- *     If its z value is lower than vUp (constructed solution) : 
- *         if this is an integer solution, we keep it
- *         else,
- *             we create its sons with a new constraint.
- */
-node* branchAndBound (glp_prob * prob, data * dat, int capacited)
-{
-	node* root = (node *) malloc (sizeof(node));
-	create_node(root, prob, NULL, 0, 0, capacited);
-	nbnode++;
-	
-	node* res = construction(prob, dat, capacited);
-	
-	double vUp = res->z; 
-	
-	node* node_ptr = checked(root);
-	while (node_ptr != NULL)
-	{
-		if (node_ptr->z != 0)
-		{
-			if (!(node_ptr->z >= vUp))
-			{
-				int y = allYintegerVar(node_ptr->x, glp_get_num_cols(node_ptr->prob),dat);
-                //int y = allYinteger(node_ptr->x, glp_get_num_cols(node_ptr->prob));
-				if ( y == -1)
-				{
-					vUp = node_ptr->z;
-					res = node_ptr;
-				}
-				else
-				{
-					node* left = (node *) malloc (sizeof(node));
-					node* right = (node *) malloc (sizeof(node));
-
-					create_node(left, prob, node_ptr, y, 0, capacited);
-					create_node(right, prob, node_ptr, y, 1, capacited);
-					nbnode += 2;
-					
-					node_ptr->leftSon = left;
-					node_ptr->rightSon = right;
-				}
-			}
-		}
-	
-		node_ptr->check = 1;
-		node_ptr = checked(root);
-	}
-
-	return res;
-}
-
-/*========== MAIN FUNCTION ====================*/
 int main(int argc, char** argv)
 {
 	/*==================================================*/
 	/* Variables */
 	data d;
 	int* M;
-	int capacited;
-	double temps;
-	
+
 	/* GLPK */
 	int *ia, *ja;
 	double *ar;
@@ -462,25 +346,14 @@ int main(int argc, char** argv)
 	int i, pos;
 
 	/* Check up */
-	if(argc != 5)
+	if(argc != 2)
 	{
-		printf("ERROR : usage : %c -type <ULS or CLS> -data <data file>!\n", argv[0]);
+		printf("ERROR : no data file !\n");
 		exit(1);		
 	}
 	
 	/* Initialization */
-	filereader(argv[4], &d);
-
-	crono_start();
-	
-	if(strcmp(argv[2], "ULS") == 0)
-	{
-		capacited = 0;
-	}
-	else
-	{
-		capacited = 1;
-	}
+	filereader(argv[1], &d);
 
 	if(d.nbjour < 1)
 	{
@@ -498,14 +371,7 @@ int main(int argc, char** argv)
 	/* Problem creation*/
 	glp_prob *prob;
 	prob = glp_create_prob();
-	if (!capacited)
-	{
-		glp_set_prob_name(prob, "ULS");
-	}
-	else
-	{
-		glp_set_prob_name(prob, "CLS");
-	}
+	glp_set_prob_name(prob, "ULS");
 	glp_set_obj_dir(prob, GLP_MIN);
 
 	glp_smcp parm;
@@ -587,7 +453,7 @@ int main(int argc, char** argv)
 		ja[pos+1] = i*3+3;
 
 		ar[pos] = -1.0;
-		ar[pos+1] = (!capacited) ? M[i] : d.c[i];
+		ar[pos+1] = M[i];
 			
 		pos += 2;
 	}
@@ -606,23 +472,9 @@ int main(int argc, char** argv)
 	glp_load_matrix(prob, notZeroCount, ia, ja , ar);
 
 	/* Writing in a file */
-	if (!capacited)
-	{
-		glp_write_lp(prob, NULL, "ULS.lp");
-	}
-	else
-	{
-		glp_write_lp(prob, NULL, "CLS.lp");
-	}
-	
-	/* Branch and bound */
-	nbnode = 0;
-	node* res = branchAndBound(prob, &d, capacited);
+	glp_write_lp(prob, NULL, "ULS.lp");
 
-	crono_stop();
-	temps = crono_ms()/1000,0;
-	printf("\n\n RESULTS :\n");
+	/* Branch and bound */
+	node* res = branchAndBound(prob);
 	displayNode(res);
-	printf("\nTime : %f\n",temps);
-	printf("Number of nodes : %d\n", nbnode);
 }
