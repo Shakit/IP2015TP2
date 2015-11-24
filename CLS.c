@@ -1,4 +1,4 @@
-/* main.c
+/* CLS.c 
  * Authors : DELAVERNHE Florian, LEGRU Guillaume
  * Date 10 11 2015
  *
@@ -22,6 +22,7 @@ typedef struct data
 	int* p;
 	int* h;
 	int* f;
+	int* c;
 } data;
 
 /* Node structure */
@@ -43,7 +44,7 @@ void displayNode(node* n)
 {
 	int i;
 
-	if (n->solveFlag == 0 && n->z == 0)
+	if (0)//n->solveFlag == 0 && n->z == 0)
 	{
 		printf("NOT FEASIBLE\n");
 	}
@@ -89,7 +90,7 @@ void create_node(node* n, glp_prob* prob, node* father, int y, double valy)
 	glp_init_iocp(&parmip);
 	parmip.msg_lev = GLP_MSG_OFF;
 
-	glp_write_lp(prob, NULL, "ULS.lp");
+	glp_write_lp(prob, NULL, "CLS.lp");
 
 	n->solveFlag = glp_simplex(n->prob, &parm); glp_intopt(n->prob, &parmip);
 
@@ -158,39 +159,46 @@ node* checked(node* n)
 }
 
 /* base solution construction function */
-node* construction (glp_prob * prob)
+node* construction (glp_prob * prob, data* d)
 {
 	node* res = (node *) malloc (sizeof(node));
 	
 	glp_prob * constProb = glp_create_prob(); glp_copy_prob(constProb, prob, GLP_ON);
-	int i = glp_add_rows(constProb, 1);
-	int k = glp_add_rows(constProb, 1);
-    int nbj = glp_get_num_cols(prob)/3 -1;
-
-	int ind[nbj+2];
-	double val[nbj+2];
-	int indk[nbj+2];
-	double valk[nbj+2];
 	int j;
+	double val[] = {0,1};
+	int ind[] = {0,0};
 	
-	ind[0] = 0; val[0] = 1;
-	ind[1] = 1; val[1] = 1;
-	indk[1] = 2 ; valk[1] = 1;
-	for (j = 1; j <= nbj; ++j)
+	int tamp = 0;
+	for (j=1; j <= d->nbjour; j++)
 	{
-		ind[j] = j * 3 +2;
-		indk[j] = j *3 + 3;
-		val[j] = 1;
-		valk[j] = 1;
+		tamp += d->d[j];
+	}
+
+	j=1;
+	int totDemand=0;
+	while (tamp>totDemand)
+	{
+		if (d->c[j] <= tamp - totDemand)
+		{
+			int i = glp_add_rows(constProb, 1);
+			ind[1] = j*3 + 1;
+			glp_set_mat_row(constProb, i, 1, ind, val);
+			glp_set_row_bnds(constProb, i, GLP_FX, d->c[j], d->c[j]);
+			totDemand += d->c[j];
+		}
+		else
+		{
+			int i = glp_add_rows(constProb, 1);
+			ind[1] = j*3 + 1;
+			glp_set_mat_row(constProb, i, 1, ind, val);
+			glp_set_row_bnds(constProb, i, GLP_FX,tamp-totDemand,tamp-totDemand);
+			totDemand += tamp-totDemand;
+		}
+		j++;
 
 		
 	}
-
 	
-	glp_set_mat_row(constProb, i, nbj, ind, val);
-	glp_set_row_bnds(constProb, i, GLP_FX, 0, 0);
-	glp_set_mat_row(constProb, k, nbj, indk, valk);
-	glp_set_row_bnds(constProb, k, GLP_FX, nbj, nbj);
 
 
 	create_node(res, constProb, NULL, 0, 0);
@@ -221,12 +229,12 @@ int allYinteger (double* x, int size)
 }
 
 /* Branch and bound algorithm */
-node* branchAndBound (glp_prob * prob)
+node* branchAndBound (glp_prob * prob, data* d)
 {
 	node* root = (node *) malloc (sizeof(node));
 	create_node(root, prob, NULL, 0, 0);
 
-	node* res = construction(prob);
+	node* res = construction(prob,d);
 	double vUp = res->z; 
 	
 	node* node_ptr = checked(root);
@@ -274,7 +282,7 @@ node* branchAndBound (glp_prob * prob)
 		//	displayNode(node_ptr);
 		printf("----------------------\n");
 	}
-
+	
 	return res;
 }
 
@@ -297,6 +305,7 @@ void filereader(char* filename, data* d)
 	d->p = (int *) malloc ((d->nbjour +1) * sizeof(int));	
 	d->h = (int *) malloc ((d->nbjour +1) * sizeof(int));	
 	d->f = (int *) malloc ((d->nbjour +1) * sizeof(int));
+	d->c = (int *) malloc ((d->nbjour +1) * sizeof(int));
 
 	
     /* Read and fill*/	
@@ -304,6 +313,7 @@ void filereader(char* filename, data* d)
 	d->p[0] = 0;
 	d->h[0] = 0;
 	d->f[0] = 0;
+	d->c[0] = 0;
 				
 	for (i = 1; i <= d->nbjour; ++i)
 	{
@@ -325,6 +335,11 @@ void filereader(char* filename, data* d)
 		fscanf(fin, "%d", &val);
 		d->f[i] = val;
 	}
+	for (i = 1; i <= d->nbjour; ++i)
+	{
+		fscanf(fin, "%d", &val);
+		d->c[i] = val;
+	}
 
 	fclose(fin);
 }
@@ -334,7 +349,6 @@ int main(int argc, char** argv)
 	/*==================================================*/
 	/* Variables */
 	data d;
-	int* M;
 
 	/* GLPK */
 	int *ia, *ja;
@@ -362,17 +376,10 @@ int main(int argc, char** argv)
 		return 0;	
 	}
 	
-	M = (int*) malloc ((d.nbjour +1)* sizeof(int));
-	M[d.nbjour] = d.d[d.nbjour];
-	for (i = d.nbjour-1; i >=0; --i)
-	{
-		M[i] = d.d[i] + M[i+1];
-	}
-
 	/* Problem creation*/
 	glp_prob *prob;
 	prob = glp_create_prob();
-	glp_set_prob_name(prob, "ULS");
+	glp_set_prob_name(prob, "cls");
 	glp_set_obj_dir(prob, GLP_MIN);
 
 	glp_smcp parm;
@@ -454,7 +461,7 @@ int main(int argc, char** argv)
 		ja[pos+1] = i*3+3;
 
 		ar[pos] = -1.0;
-		ar[pos+1] = M[i];
+		ar[pos+1] = d.c[i];
 			
 		pos += 2;
 	}
@@ -473,13 +480,13 @@ int main(int argc, char** argv)
 	glp_load_matrix(prob, notZeroCount, ia, ja , ar);
 
 	/* Writing in a file */
-	glp_write_lp(prob, NULL, "ULS.lp");
+	glp_write_lp(prob, NULL, "CLS.lp");
 
 	/* Solve */
 //	glp_simplex(prob, &parm); glp_intopt(prob, &parmip);
 
 	/* Branch and bound */
-	node* res = branchAndBound(prob);
+	node* res = branchAndBound(prob,&d);
 	printf("fin BB");
 	displayNode(res);
 
