@@ -128,11 +128,11 @@ void create_node(node* n, glp_prob* prob, node* father, int y, double valy, int 
 
 	if (!capacited)
 	{
-		glp_write_lp(prob, NULL, "ULS.lp");
+		glp_write_lp(prob, NULL, "../res/ULS.lp");
 	}
 	else
 	{
-		glp_write_lp(prob, NULL, "CLS.lp");
+		glp_write_lp(prob, NULL, "../res/CLS.lp");
 	}
 	n->solveFlag = glp_simplex(n->prob, &parm); glp_intopt(n->prob, &parmip);
 
@@ -395,7 +395,7 @@ void filereader(char* filename, data* d)
  *         else,
  *             we create its sons with a new constraint.
  */
-node* branchAndBound (glp_prob * prob, data * dat, int capacited)
+node* branchAndBound (glp_prob * prob, data * dat, int capacited, int variante)
 {
 	node* root = (node *) malloc (sizeof(node));
 	create_node(root, prob, NULL, 0, 0, capacited);
@@ -412,8 +412,16 @@ node* branchAndBound (glp_prob * prob, data * dat, int capacited)
 		{
 			if (!(node_ptr->z >= vUp))
 			{
-				int y = allYintegerVar(node_ptr->x, glp_get_num_cols(node_ptr->prob),dat);
-                //int y = allYinteger(node_ptr->x, glp_get_num_cols(node_ptr->prob));
+				int y;
+				if (variante == 1)
+				{
+				    y = allYintegerVar(node_ptr->x, glp_get_num_cols(node_ptr->prob),dat);
+				}
+                else
+				{
+					y = allYinteger(node_ptr->x, glp_get_num_cols(node_ptr->prob));
+				}
+				
 				if ( y == -1)
 				{
 					vUp = node_ptr->z;
@@ -449,6 +457,7 @@ int main(int argc, char** argv)
 	data d;
 	int* M;
 	int capacited;
+	int variante;
 	double temps;
 	
 	/* GLPK */
@@ -462,16 +471,14 @@ int main(int argc, char** argv)
 	int i, pos;
 
 	/* Check up */
-	if(argc != 5)
+	if(argc != 7)
 	{
-		printf("ERROR : usage : %c -type <ULS or CLS> -data <data file>!\n", argv[0]);
+		printf("ERROR : usage : %s -type <ULS or CLS> -data <data file> -variante <0 or 1>!\n", argv[0]);
 		exit(1);		
 	}
 	
 	/* Initialization */
 	filereader(argv[4], &d);
-
-	crono_start();
 	
 	if(strcmp(argv[2], "ULS") == 0)
 	{
@@ -481,7 +488,11 @@ int main(int argc, char** argv)
 	{
 		capacited = 1;
 	}
+	
+	variante = atoi(argv[6]);
 
+	crono_start();
+	
 	if(d.nbjour < 1)
 	{
 		printf("Obvious...\n");
@@ -608,16 +619,16 @@ int main(int argc, char** argv)
 	/* Writing in a file */
 	if (!capacited)
 	{
-		glp_write_lp(prob, NULL, "ULS.lp");
+		glp_write_lp(prob, NULL, "../res/ULS.lp");
 	}
 	else
 	{
-		glp_write_lp(prob, NULL, "CLS.lp");
+		glp_write_lp(prob, NULL, "../res/CLS.lp");
 	}
 	
 	/* Branch and bound */
 	nbnode = 0;
-	node* res = branchAndBound(prob, &d, capacited);
+	node* res = branchAndBound(prob, &d, capacited, variante);
 
 	crono_stop();
 	temps = crono_ms()/1000,0;
